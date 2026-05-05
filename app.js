@@ -7,6 +7,10 @@ const PLAYERS = {
 
 const TOP_POINTS = [12, 13, 14, 15, 16, 17, "spacer", 18, 19, 20, 21, 22, 23];
 const BOTTOM_POINTS = [11, 10, 9, 8, 7, 6, "spacer", 5, 4, 3, 2, 1, 0];
+const POINT_COLOR_BY_ROW = {
+  bottom: ["dark", "light", "dark", "light", "dark", "light", "spacer", "dark", "light", "dark", "light", "dark", "light"],
+  top: ["light", "dark", "light", "dark", "light", "dark", "spacer", "light", "dark", "light", "dark", "light", "dark"],
+};
 const STORAGE_THEME = "backgammon-theme";
 const STORAGE_LARGE = "backgammon-large";
 const STORAGE_OPPONENT = "backgammon-opponent";
@@ -31,6 +35,8 @@ const state = {
   difficulty: "normal",
   npcThinking: false,
   npcTimerId: null,
+  moveLog: [],
+  traceTimerId: null,
 };
 
 const els = {
@@ -53,6 +59,10 @@ const els = {
   timer: document.querySelector("#timer"),
   notice: document.querySelector("#notice"),
   diceTray: document.querySelector("#diceTray"),
+  moveLog: document.querySelector("#moveLog"),
+  moveOverlay: document.querySelector("#moveOverlay"),
+  movePath: document.querySelector("#movePath"),
+  moveGhost: document.querySelector("#moveGhost"),
   rollBtn: document.querySelector("#rollBtn"),
   undoBtn: document.querySelector("#undoBtn"),
   newGameBtn: document.querySelector("#newGameBtn"),
@@ -116,11 +126,11 @@ function init() {
 }
 
 function buildPointButtons() {
-  els.pointsTop.replaceChildren(...TOP_POINTS.map((point) => makePointNode(point, "top")));
-  els.pointsBottom.replaceChildren(...BOTTOM_POINTS.map((point) => makePointNode(point, "bottom")));
+  els.pointsTop.replaceChildren(...TOP_POINTS.map((point, index) => makePointNode(point, "top", index)));
+  els.pointsBottom.replaceChildren(...BOTTOM_POINTS.map((point, index) => makePointNode(point, "bottom", index)));
 }
 
-function makePointNode(point, row) {
+function makePointNode(point, row, index) {
   if (point === "spacer") {
     const spacer = document.createElement("div");
     spacer.className = "point-spacer";
@@ -129,7 +139,7 @@ function makePointNode(point, row) {
 
   const button = document.createElement("button");
   button.type = "button";
-  button.className = `point ${row}`;
+  button.className = `point ${row} point-${POINT_COLOR_BY_ROW[row][index]}`;
   button.dataset.point = String(point);
   button.innerHTML = '<span class="point-label"></span><div class="checker-stack"></div>';
   button.querySelector(".point-label").textContent = String(point + 1);
@@ -139,6 +149,7 @@ function makePointNode(point, row) {
 
 function newGame() {
   cancelNpcTurn();
+  clearMoveTrace();
   stopTimer();
   state.points = Array(24).fill(0);
   state.points[23] = -2;
@@ -164,6 +175,7 @@ function newGame() {
     : "Hell beginnt. Bitte würfeln.";
   state.gameOver = false;
   state.npcThinking = false;
+  state.moveLog = [];
   render();
 }
 
@@ -276,9 +288,11 @@ function handleSpecialClick(token) {
 }
 
 function performMove(move) {
+  const notation = formatMoveNotation(move);
   pushHistory();
   applyMoveToState(state, move);
   state.moveCount += 1;
+  recordMove(move, notation);
   removeDie(move.die);
   state.selected = null;
 
@@ -346,7 +360,7 @@ function scheduleNpcTurn() {
     }
     const move = chooseNpcMove();
     if (move) {
-      performMove(move);
+      playNpcMove(move);
     } else {
       state.remainingDice = [];
       switchTurn("Computer kann nicht setzen.");
@@ -358,6 +372,19 @@ function cancelNpcTurn() {
   if (state.npcTimerId) window.clearTimeout(state.npcTimerId);
   state.npcTimerId = null;
   state.npcThinking = false;
+}
+
+function playNpcMove(move) {
+  const notation = formatMoveNotation(move);
+  state.npcThinking = true;
+  state.message = `Computer zieht ${notation}.`;
+  showMoveTrace(move, notation);
+  render();
+  state.npcTimerId = window.setTimeout(() => {
+    state.npcTimerId = null;
+    state.npcThinking = false;
+    if (isNpcTurn()) performMove(move);
+  }, 1100);
 }
 
 function chooseNpcMove() {
@@ -583,6 +610,7 @@ function render() {
   els.rollBtn.disabled = state.gameOver || state.remainingDice.length > 0 || isNpcTurn();
   els.undoBtn.disabled = state.history.length === 0 || state.npcThinking;
   els.difficultySelect.disabled = state.opponent !== "cpu";
+  renderMoveLog();
 }
 
 function renderBar(playerKey, legalSources) {
@@ -650,6 +678,92 @@ function renderStack(container, owner, count) {
   }
 }
 
+function recordMove(move, notation) {
+  state.moveLog.unshift({
+    player: PLAYERS[move.player].name,
+    notation,
+    die: move.die,
+    moveNo: state.moveCount,
+  });
+  state.moveLog = state.moveLog.slice(0, 24);
+}
+
+function renderMoveLog() {
+  els.moveLog.replaceChildren(
+    ...state.moveLog.map((entry) => {
+      const item = document.createElement("li");
+      item.textContent = `${entry.moveNo}. ${entry.player}: ${entry.notation} (${entry.die})`;
+      return item;
+    }),
+  );
+}
+
+function formatMoveNotation(move) {
+  const from = move.from === "bar" ? "bar" : String(move.from + 1);
+  const to = move.to === "off" ? "off" : String(move.to + 1);
+  const hit = move.to !== "off"
+    && ownerOf(state.points[move.to]) === (move.player === "light" ? "dark" : "light")
+    && Math.abs(state.points[move.to]) === 1;
+  return `${from}/${to}${hit ? "*" : ""}`;
+}
+
+function showMoveTrace(move, notation) {
+  if (!els.moveOverlay || !els.movePath || !els.moveGhost || !els.moveOverlay.getBoundingClientRect) return;
+
+  const boardRect = els.moveOverlay.getBoundingClientRect();
+  const from = getMoveAnchor(move.from, move.player, boardRect);
+  const to = getMoveAnchor(move.to, move.player, boardRect);
+  if (!from || !to) return;
+
+  const lift = Math.max(46, Math.abs(to.x - from.x) * 0.18);
+  const controlY = Math.min(from.y, to.y) - lift;
+  const path = `M ${from.x} ${from.y} Q ${(from.x + to.x) / 2} ${controlY} ${to.x} ${to.y}`;
+
+  els.moveOverlay.setAttribute("viewBox", `0 0 ${boardRect.width} ${boardRect.height}`);
+  els.moveOverlay.classList.add("active");
+  els.movePath.setAttribute("d", path);
+  els.movePath.setAttribute("aria-label", notation);
+
+  els.moveGhost.className = `move-ghost ${move.player} active`;
+  els.moveGhost.style.setProperty("--from-x", `${from.x}px`);
+  els.moveGhost.style.setProperty("--from-y", `${from.y}px`);
+  els.moveGhost.style.setProperty("--mid-x", `${(from.x + to.x) / 2}px`);
+  els.moveGhost.style.setProperty("--mid-y", `${controlY}px`);
+  els.moveGhost.style.setProperty("--to-x", `${to.x}px`);
+  els.moveGhost.style.setProperty("--to-y", `${to.y}px`);
+
+  if (state.traceTimerId) window.clearTimeout(state.traceTimerId);
+  state.traceTimerId = window.setTimeout(clearMoveTrace, 2200);
+}
+
+function clearMoveTrace() {
+  if (state.traceTimerId) window.clearTimeout(state.traceTimerId);
+  state.traceTimerId = null;
+  if (els.moveOverlay) els.moveOverlay.classList.remove("active");
+  if (els.moveGhost) els.moveGhost.className = "move-ghost";
+}
+
+function getMoveAnchor(target, playerKey, boardRect) {
+  let node = null;
+  if (target === "bar") {
+    node = playerKey === "light" ? els.barLight : els.barDark;
+  } else if (target === "off") {
+    node = playerKey === "light" ? els.bearOffLight : els.bearOffDark;
+  } else {
+    node = findPointNode(target);
+  }
+  if (!node || !node.getBoundingClientRect) return null;
+  const rect = node.getBoundingClientRect();
+  return {
+    x: rect.left - boardRect.left + rect.width / 2,
+    y: rect.top - boardRect.top + rect.height / 2,
+  };
+}
+
+function findPointNode(point) {
+  return [...document.querySelectorAll(".point")].find((node) => Number(node.dataset.point) === point);
+}
+
 function sourceFromPoint(point) {
   const owner = ownerOf(state.points[point]);
   if (!owner) return null;
@@ -683,6 +797,8 @@ function cloneSnapshot(source) {
     difficulty: source.difficulty,
     npcThinking: source.npcThinking,
     npcTimerId: null,
+    moveLog: source.moveLog.map((entry) => ({ ...entry })),
+    traceTimerId: null,
   };
 }
 
@@ -703,6 +819,8 @@ function restoreSnapshot(snapshot) {
   state.difficulty = snapshot.difficulty;
   state.npcThinking = false;
   state.npcTimerId = null;
+  state.moveLog = snapshot.moveLog.map((entry) => ({ ...entry }));
+  clearMoveTrace();
 
   if (state.started && !state.timerId) startTimer();
   if (!state.started) stopTimer();

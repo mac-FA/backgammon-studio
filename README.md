@@ -12,5 +12,6 @@ Eine neue statische Backgammon-Web-App mit großem, stabilem Brett, lokaler Zwei
 - Zugprüfung inklusive Würfelreihenfolge, Pasch und Pflicht zur maximalen Zuganzahl
 - Klickbedienung mit klar markierten Quellen und Zielen
 - Computergegner für Dunkel mit Leicht, Mittel und Schwer
+- Sichtbare NPC-Zugspur mit animiertem Stein, Pfeil und Zugprotokoll
 - Undo, Timer, Zugzähler und kontrastreiche Themes
-- Responsives Layout mit festen Brettdimensionen gegen Springen und Ruckeln
+- Kompaktes, oben ausgerichtetes Layout mit festen Brettdimensionen gegen Springen und Ruckeln
