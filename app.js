@@ -203,6 +203,7 @@ function rollDice(options = {}) {
   if (!legalMoves.length) {
     const playerName = currentPlayer().name;
     const diceText = formatDice(state.dice);
+    recordPass(state.turn, diceText);
     state.dice = [];
     state.remainingDice = [];
     switchTurn(`${playerName} kann ${diceText} nicht setzen.`);
@@ -233,6 +234,18 @@ function handlePointClick(point) {
     const move = legalMoves.find((item) => sameSource(item.from, state.selected) && item.to === point);
     if (move) {
       performMove(move);
+      return;
+    }
+
+    const offMove = legalMoves.find((item) => sameSource(item.from, state.selected) && item.to === "off");
+    if (sameSource(state.selected, point) && offMove) {
+      performMove(offMove);
+      return;
+    }
+
+    const sequence = findChainedMove(state.selected, point);
+    if (sequence) {
+      performMoveSequence(sequence);
       return;
     }
   }
@@ -283,7 +296,12 @@ function handleSpecialClick(token) {
 
   if ((token === "off-light" || token === "off-dark") && state.selected) {
     const move = legalMoves.find((item) => sameSource(item.from, state.selected) && item.to === "off");
-    if (move) performMove(move);
+    if (move) {
+      performMove(move);
+      return;
+    }
+    const sequence = findChainedMove(state.selected, "off");
+    if (sequence) performMoveSequence(sequence);
   }
 }
 
@@ -313,6 +331,7 @@ function performMove(move) {
   const legalMoves = getLegalMoves();
   if (!legalMoves.length) {
     const diceText = formatDice(state.remainingDice);
+    recordPass(state.turn, diceText);
     state.remainingDice = [];
     switchTurn(`${player.name} kann ${diceText} nicht weiter setzen.`);
     return;
@@ -321,6 +340,48 @@ function performMove(move) {
   state.message = `${player.name}: ${formatDice(state.remainingDice)} übrig.`;
   render();
   scheduleNpcTurn();
+}
+
+function performMoveSequence(sequence) {
+  if (!sequence.length) return;
+  const notations = sequence.map((move) => formatMoveNotation(move));
+  pushHistory();
+  sequence.forEach((move, index) => {
+    applyMoveToState(state, move);
+    state.moveCount += 1;
+    removeDie(move.die);
+    if (index === sequence.length - 1) {
+      recordSequence(sequence, notations);
+    }
+  });
+  state.selected = null;
+
+  const last = sequence[sequence.length - 1];
+  const player = PLAYERS[last.player];
+  if (state.off[last.player] === 15) {
+    state.gameOver = true;
+    state.message = `${player.name} gewinnt nach ${state.moveCount} Zügen.`;
+    stopTimer();
+    render();
+    return;
+  }
+
+  if (!state.remainingDice.length) {
+    switchTurn(`${player.name} hat den Zug beendet.`);
+    return;
+  }
+
+  const legalMoves = getLegalMoves();
+  if (!legalMoves.length) {
+    const diceText = formatDice(state.remainingDice);
+    recordPass(state.turn, diceText);
+    state.remainingDice = [];
+    switchTurn(`${player.name} kann ${diceText} nicht weiter setzen.`);
+    return;
+  }
+
+  state.message = `${player.name}: ${formatDice(state.remainingDice)} übrig.`;
+  render();
 }
 
 function undo() {
@@ -362,6 +423,7 @@ function scheduleNpcTurn() {
     if (move) {
       playNpcMove(move);
     } else {
+      recordPass(state.turn, formatDice(state.remainingDice));
       state.remainingDice = [];
       switchTurn("Computer kann nicht setzen.");
     }
@@ -461,6 +523,56 @@ function getLegalMoves(snapshot = state) {
   }
 
   return uniqueMoves(best.map((sequence) => sequence[0]));
+}
+
+function findChainedMove(from, target) {
+  const playerKey = state.turn;
+  const sequences = buildMoveSequences(cloneSnapshot(state), state.remainingDice)
+    .filter((sequence) => sequence.length > 1 && sameSource(sequence[0].from, from));
+
+  const matching = sequences
+    .map((sequence) => takeSameCheckerPath(sequence, target))
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length || sumDice(b) - sumDice(a));
+
+  const best = matching[0];
+  if (!best || best.some((move) => move.player !== playerKey)) return null;
+  return best;
+}
+
+function getChainedTargets(from) {
+  return buildMoveSequences(cloneSnapshot(state), state.remainingDice)
+    .filter((sequence) => sequence.length > 1 && sameSource(sequence[0].from, from))
+    .map((sequence) => {
+      const path = takeSameCheckerPrefix(sequence);
+      return path.length > 1 ? path[path.length - 1].to : null;
+    })
+    .filter((target) => target !== null);
+}
+
+function takeSameCheckerPrefix(sequence) {
+  const path = [];
+  for (const move of sequence) {
+    if (path.length && !sameSource(move.from, path[path.length - 1].to)) break;
+    path.push(move);
+    if (move.to === "off") break;
+  }
+  return path;
+}
+
+function takeSameCheckerPath(sequence, target) {
+  const path = [];
+  for (const move of sequence) {
+    if (path.length && !sameSource(move.from, path[path.length - 1].to)) break;
+    path.push(move);
+    if (move.to === target || (target !== "off" && move.to === Number(target))) return path;
+    if (move.to === "off") break;
+  }
+  return null;
+}
+
+function sumDice(sequence) {
+  return sequence.reduce((sum, move) => sum + move.die, 0);
 }
 
 function buildMoveSequences(snapshot, dice) {
@@ -573,7 +685,10 @@ function render() {
   const legalSources = new Set(legalMoves.map((move) => sourceKey(move.from)));
   const legalTargets = new Set(
     state.selected
-      ? legalMoves.filter((move) => sameSource(move.from, state.selected)).map((move) => targetKey(move.to))
+      ? [
+          ...legalMoves.filter((move) => sameSource(move.from, state.selected)).map((move) => targetKey(move.to)),
+          ...getChainedTargets(state.selected).map(targetKey),
+        ]
       : [],
   );
 
@@ -688,11 +803,36 @@ function recordMove(move, notation) {
   state.moveLog = state.moveLog.slice(0, 24);
 }
 
+function recordSequence(sequence, notations) {
+  const player = PLAYERS[sequence[0].player].name;
+  state.moveLog.unshift({
+    player,
+    notation: collapseSequenceNotation(sequence, notations),
+    die: sequence.map((move) => move.die).join("+"),
+    moveNo: state.moveCount - sequence.length + 1,
+  });
+  state.moveLog = state.moveLog.slice(0, 24);
+}
+
+function recordPass(playerKey, diceText) {
+  if (!diceText) return;
+  state.moveLog.unshift({
+    type: "pass",
+    player: PLAYERS[playerKey].name,
+    notation: `passt ${diceText}`,
+    die: diceText,
+    moveNo: state.moveCount + 1,
+  });
+  state.moveLog = state.moveLog.slice(0, 24);
+}
+
 function renderMoveLog() {
   els.moveLog.replaceChildren(
     ...state.moveLog.map((entry) => {
       const item = document.createElement("li");
-      item.textContent = `${entry.moveNo}. ${entry.player}: ${entry.notation} (${entry.die})`;
+      item.textContent = entry.type === "pass"
+        ? `${entry.moveNo}. ${entry.player}: ${entry.notation}`
+        : `${entry.moveNo}. ${entry.player}: ${entry.notation} (${entry.die})`;
       return item;
     }),
   );
@@ -705,6 +845,14 @@ function formatMoveNotation(move) {
     && ownerOf(state.points[move.to]) === (move.player === "light" ? "dark" : "light")
     && Math.abs(state.points[move.to]) === 1;
   return `${from}/${to}${hit ? "*" : ""}`;
+}
+
+function collapseSequenceNotation(sequence, notations) {
+  const first = sequence[0];
+  const points = [first.from === "bar" ? "bar" : String(first.from + 1)];
+  sequence.forEach((move) => points.push(move.to === "off" ? "off" : String(move.to + 1)));
+  const hit = notations.some((notation) => notation.endsWith("*"));
+  return `${points.join("/")}${hit ? "*" : ""}`;
 }
 
 function showMoveTrace(move, notation) {
