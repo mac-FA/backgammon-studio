@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <title>Backgammon Studio</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">BG</span>
+          <div>
+            <h1>Backgammon Studio</h1>
+            <p id="turnLabel">Bereit</p>
+          </div>
+        </div>
+
+        <section class="stats" aria-label="Spielstand">
+          <div>
+            <span>Am Zug</span>
+            <strong id="turnStat">Hell</strong>
+          </div>
+          <div>
+            <span>Würfel</span>
+            <strong id="diceStat">--</strong>
+          </div>
+          <div>
+            <span>Züge</span>
+            <strong id="moveCount">0</strong>
+          </div>
+          <div>
+            <span>Zeit</span>
+            <strong id="timer">00:00</strong>
+          </div>
+        </section>
+      </header>
+
+      <main class="workspace">
+        <section class="table-area" aria-label="Backgammon-Brett">
+          <div class="notice" id="notice" role="status" aria-live="polite"></div>
+
+          <div class="board-shell">
+            <div class="board" id="board">
+              <button class="home-tray tray-top" id="bearOffDark" type="button" aria-label="Dunkle Steine ausspielen">
+                <span>Dunkel raus</span>
+                <strong id="darkOff">0</strong>
+              </button>
+
+              <button class="bar bar-top" id="barDark" type="button" aria-label="Dunkle Steine auf der Bar">
+                <span>Bar</span>
+                <div class="bar-stack" id="barDarkStack"></div>
+              </button>
+
+              <div class="points" id="pointsTop" aria-label="Obere Punkte"></div>
+
+              <button class="bar bar-bottom" id="barLight" type="button" aria-label="Helle Steine auf der Bar">
+                <span>Bar</span>
+                <div class="bar-stack" id="barLightStack"></div>
+              </button>
+
+              <div class="points" id="pointsBottom" aria-label="Untere Punkte"></div>
+
+              <button class="home-tray tray-bottom" id="bearOffLight" type="button" aria-label="Helle Steine ausspielen">
+                <span>Hell raus</span>
+                <strong id="lightOff">0</strong>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel" aria-label="Steuerung">
+          <section class="dice-panel" aria-label="Würfel">
+            <span class="panel-label">Würfel</span>
+            <div id="diceTray" class="dice-tray"></div>
+          </section>
+
+          <div class="actions" aria-label="Spielaktionen">
+            <button id="rollBtn" type="button">Würfeln</button>
+            <button id="undoBtn" type="button">Zurück</button>
+            <button id="newGameBtn" type="button">Neu</button>
+          </div>
+
+          <div class="field">
+            <label for="opponentSelect">Gegner</label>
+            <select id="opponentSelect">
+              <option value="cpu">Computer</option>
+              <option value="human">Mensch</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label for="difficultySelect">Schwierigkeit</label>
+            <select id="difficultySelect">
+              <option value="easy">Leicht</option>
+              <option value="normal">Mittel</option>
+              <option value="hard">Schwer</option>
+            </select>
+          </div>
+
+          <section class="score-panel" aria-label="Rausgespielte Steine">
+            <div>
+              <span>Hell</span>
+              <strong id="lightScore">0 / 15</strong>
+            </div>
+            <div>
+              <span>Dunkel</span>
+              <strong id="darkScore">0 / 15</strong>
+            </div>
+          </section>
+
+          <div class="field">
+            <label for="themeSelect">Kontrast</label>
+            <select id="themeSelect">
+              <option value="felt">Felt</option>
+              <option value="paper">Papier</option>
+              <option value="night">Nacht</option>
+              <option value="high">Maximal</option>
+            </select>
+          </div>
+
+          <div class="toggle-row">
+            <label for="largeMode">Große Steine</label>
+            <input id="largeMode" type="checkbox" checked>
+          </div>
+
+          <section class="rules-card" aria-label="Kurzstatus">
+            <span class="panel-label">Bedienung</span>
+            <p>Quelle wählen, markiertes Ziel antippen. Steine auf der Bar müssen zuerst zurück ins Spiel.</p>
+          </section>
+        </aside>
+      </main>
+    </div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
