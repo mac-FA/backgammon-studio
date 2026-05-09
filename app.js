@@ -522,7 +522,24 @@ function getLegalMoves(snapshot = state) {
     if (hasHigh) best = best.filter((sequence) => sequence[0].die === high);
   }
 
+  best = includeExactOnePointBearOff(snapshot, best, sequences);
+
   return uniqueMoves(best.map((sequence) => sequence[0]));
+}
+
+function includeExactOnePointBearOff(snapshot, best, sequences) {
+  if (!snapshot.remainingDice.includes(1)) return best;
+  const onePoint = snapshot.turn === "light" ? 0 : 23;
+  const exactBearOff = sequences.find((sequence) => {
+    const move = sequence[0];
+    return move
+      && move.from === onePoint
+      && move.to === "off"
+      && move.die === 1
+      && sequence.length === Math.max(...best.map((item) => item.length));
+  });
+  if (!exactBearOff) return best;
+  return [...best, exactBearOff];
 }
 
 function findChainedMove(from, target) {

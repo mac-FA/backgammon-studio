@@ -533,7 +533,7 @@ h1 {
 }
 
 .tray-bottom {
-  grid-column: 1;
+  grid-column: 5;
   grid-row: 2;
 }
 
